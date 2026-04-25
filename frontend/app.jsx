@@ -235,15 +235,35 @@ function saveHistory(items) {
 // ---------- Avatar placeholder ----------
 const PHOTO_MAP = {
   idle: "uploads/sit.png",
-  listening: "uploads/sit.png",
-  thinking: "uploads/talk.png",
+  listening: "uploads/sit_talk.png",
+  thinking: "uploads/important_talk.png",
   speaking: "uploads/important.png",
-  faq_generating: "uploads/talk.png",
-  faq_done: "uploads/important.png",
+  faq_generating: "uploads/important_talk.png",
+  faq_done: "uploads/sit.png",
 };
 
 function AvatarPhoto({ photoKey }) {
   const src = PHOTO_MAP[photoKey] || PHOTO_MAP.idle;
+  const [slots, setSlots] = useState({ a: src, b: src, active: "a" });
+
+  useEffect(() => {
+    setSlots((s) => {
+      if (s[s.active] === src) return s;
+      const next = s.active === "a" ? "b" : "a";
+      return { ...s, [next]: src, active: next };
+    });
+  }, [src]);
+
+  const imgStyle = {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    objectPosition: "50% 18%",
+    mixBlendMode: "multiply",
+    transition: "opacity 350ms ease",
+  };
+
   return (
     <div
       style={{
@@ -256,20 +276,8 @@ function AvatarPhoto({ photoKey }) {
           "linear-gradient(to bottom, black 0%, black 60%, rgba(0,0,0,0.5) 82%, transparent 100%)",
       }}
     >
-      <img
-        key={src}
-        src={src}
-        alt=""
-        style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          objectPosition: "50% 18%",
-          display: "block",
-          mixBlendMode: "multiply",
-          animation: "bubbleIn 300ms ease both",
-        }}
-      />
+      <img src={slots.a} alt="" style={{ ...imgStyle, opacity: slots.active === "a" ? 1 : 0 }} />
+      <img src={slots.b} alt="" style={{ ...imgStyle, opacity: slots.active === "b" ? 1 : 0 }} />
 
       {photoKey === "listening" && (
         <div
@@ -346,6 +354,26 @@ function AvatarPanel({ status, photoKey, faq }) {
   );
 }
 
+// ---------- User bubble ----------
+function UserBubble({ text }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+      <div style={{
+        background: ACCENT,
+        color: "#fff",
+        borderRadius: "18px 18px 4px 18px",
+        padding: "14px 20px",
+        maxWidth: 520,
+        fontSize: 16,
+        lineHeight: 1.55,
+        fontFamily: "inherit",
+      }}>
+        {text}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Document renderer ----------
 function EmptyState() {
   return (
@@ -390,7 +418,7 @@ function ThinkingState() {
   );
 }
 
-function DocumentView({ doc, onCopy, onShorter, onSpeak, justCopied }) {
+function DocumentView({ doc }) {
   return (
     <article style={{ paddingTop: 24, paddingBottom: 40, maxWidth: 760 }}>
       <h1
@@ -510,13 +538,6 @@ function DocumentView({ doc, onCopy, onShorter, onSpeak, justCopied }) {
         </section>
       )}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 24, marginTop: 36 }}>
-        <TextButton onClick={onCopy}>
-          {justCopied ? "Скопійовано" : "Скопіювати текст"}
-        </TextButton>
-        <TextButton onClick={onShorter}>Зробити коротше</TextButton>
-        <TextButton onClick={onSpeak}>Озвучити</TextButton>
-      </div>
     </article>
   );
 }
@@ -579,7 +600,7 @@ function PrimaryButton({ onClick, children, disabled }) {
 }
 
 // ---------- Bottom bar ----------
-function Composer({ value, onChange, onSubmit, onMic, onSpeakLast, status, hasResult }) {
+function Composer({ value, onChange, onSubmit, onMic, onSpeakLast, status, hasResult, locked }) {
   const taRef = useRef(null);
 
   useEffect(() => {
@@ -589,7 +610,7 @@ function Composer({ value, onChange, onSubmit, onMic, onSpeakLast, status, hasRe
     }
   }, [value]);
 
-  const canSubmit = value.trim().length > 0 && status !== "thinking";
+  const canSubmit = value.trim().length > 0 && status !== "thinking" && !locked;
 
   return (
     <div style={{ paddingTop: 28, paddingBottom: 24 }}>
@@ -614,7 +635,7 @@ function Composer({ value, onChange, onSubmit, onMic, onSpeakLast, status, hasRe
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 if (canSubmit) onSubmit();
               }
@@ -753,85 +774,108 @@ const EXAMPLES = [
 ];
 
 function ExampleDropdown({ onPick, activeQ }) {
-  const [open, setOpen] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const VISIBLE = 2;
+  const visible = EXAMPLES.slice(0, VISIBLE);
+  const hidden = EXAMPLES.slice(VISIBLE);
 
   const pick = (ex) => {
-    setOpen(false);
     onPick && onPick(ex);
+  };
+
+  const QuestionButton = ({ ex, isLast }) => {
+    const [hover, setHover] = useState(false);
+    return (
+      <button
+        onClick={() => pick(ex)}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={{
+          width: "100%",
+          background: ex.q === activeQ ? "#f5f0fa" : hover ? "#faf8ff" : "transparent",
+          border: "none",
+          borderBottom: !isLast ? "1px solid #ede8f5" : "none",
+          padding: "12px 16px",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          textAlign: "left",
+          fontSize: 14,
+          color: ex.q === activeQ ? ACCENT : "#2d2548",
+          lineHeight: 1.4,
+          transition: "background 120ms ease, color 120ms ease",
+        }}
+      >
+        {ex.q}
+      </button>
+    );
   };
 
   return (
     <div style={{ marginTop: 36, paddingTop: 24, borderTop: "1px solid #d4c8e8" }}>
-      <button
-        onClick={() => setOpen(!open)}
+      <div
         style={{
-          background: "transparent",
-          border: "none",
-          padding: 0,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          fontFamily: "inherit",
           fontSize: 15,
           color: "#5d4d80",
           fontWeight: 500,
           marginBottom: 12,
         }}
       >
-        <span>Часті запитання</span>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 20 20"
-          fill="none"
-          stroke={ACCENT}
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{
-            transform: open ? "rotate(180deg)" : "rotate(0deg)",
-            transition: "transform 200ms ease",
-          }}
-          aria-hidden="true"
-        >
-          <polyline points="5 8 10 13 15 8" />
-        </svg>
-      </button>
+        Рекомендовані питання
+      </div>
 
-      {open && (
-        <div
+      <div
+        style={{
+          background: "#ffffff",
+          border: "1px solid #d4c8e8",
+          borderRadius: 14,
+          overflow: "hidden",
+          marginBottom: 8,
+        }}
+      >
+        {visible.map((ex, i) => (
+          <QuestionButton key={i} ex={ex} isLast={i === visible.length - 1 && !showMore && hidden.length === 0} />
+        ))}
+        {showMore && hidden.map((ex, i) => (
+          <QuestionButton key={VISIBLE + i} ex={ex} isLast={i === hidden.length - 1} />
+        ))}
+      </div>
+
+      {hidden.length > 0 && (
+        <button
+          onClick={() => setShowMore(!showMore)}
           style={{
-            background: "#ffffff",
-            border: "1px solid #d4c8e8",
-            borderRadius: 14,
-            overflow: "hidden",
-            marginBottom: 14,
+            background: "transparent",
+            border: "none",
+            padding: "4px 0",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontFamily: "inherit",
+            fontSize: 13,
+            color: "#9c8eb8",
+            fontWeight: 500,
           }}
         >
-          {EXAMPLES.map((ex, i) => (
-            <button
-              key={i}
-              onClick={() => pick(ex)}
-              style={{
-                width: "100%",
-                background: ex.q === activeQ ? "#f5f0fa" : "transparent",
-                border: "none",
-                borderBottom: i < EXAMPLES.length - 1 ? "1px solid #ede8f5" : "none",
-                padding: "12px 16px",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                textAlign: "left",
-                fontSize: 14,
-                color: "#2d2548",
-                lineHeight: 1.4,
-                transition: "background 120ms ease",
-              }}
-            >
-              {ex.q}
-            </button>
-          ))}
-        </div>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="#9c8eb8"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              transform: showMore ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 200ms ease",
+            }}
+            aria-hidden="true"
+          >
+            <polyline points="5 8 10 13 15 8" />
+          </svg>
+          {showMore ? "Сховати" : `Ще ${hidden.length}`}
+        </button>
       )}
     </div>
   );
@@ -927,6 +971,141 @@ function FaqAnswerBubble({ item, displayedText, generating }) {
   );
 }
 
+// ---------- Shared typewriter hook ----------
+function useTypewriter(onRunningChange) {
+  const [text, setText] = useState("");
+  const [running, setRunning] = useState(false);
+  const timerRef = useRef(null);
+
+  const setRunningState = (val) => {
+    setRunning(val);
+    onRunningChange && onRunningChange(val);
+  };
+
+  const start = (fullText, speed = 6) => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setText("");
+    setRunningState(true);
+    let i = 0;
+    timerRef.current = setInterval(() => {
+      i++;
+      setText(fullText.slice(0, i));
+      if (i >= fullText.length) {
+        clearInterval(timerRef.current);
+        setRunningState(false);
+      }
+    }, speed);
+  };
+
+  const stop = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setText("");
+    setRunningState(false);
+  };
+
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+
+  return { text, running, start, stop };
+}
+
+const CURSOR = (
+  <span style={{
+    display: "inline-block", width: 2, height: "1.1em",
+    background: ACCENT, marginLeft: 2, verticalAlign: "text-bottom",
+    animation: "blink 0.7s ease-in-out infinite",
+  }} />
+);
+
+// ---------- Onboarding ----------
+const ONBOARDING_KEY = "teacher_onboarded_v1";
+
+const ONBOARDING_FLOW = {
+  start_node: "step_1_initial",
+  nodes: {
+    step_1_initial: {
+      message: "Вітаю Вас, шановний колего! Я — Ваш цифровий помічник Олександр Авраменко. Разом ми зробимо Ваші уроки ще цікавішими, а підготовку до них — легшою. Скажіть, будь ласка, чи мали Ви вже досвід спілкування з подібними програмами раніше?",
+      options: [
+        { text: "Так, маю досвід", next_step: "end_experienced" },
+        { text: "Ні, це мій перший раз", next_step: "step_2_intro" },
+      ],
+    },
+    step_2_intro: {
+      message: "Не хвилюйтеся, це дуже просто і цілком безпечно! Уявіть, що я — Ваш молодий асистент. Я не просто шукаю інформацію в інтернеті, я допомагаю її створювати, щоб зекономити Ваш час. З чого б Ви хотіли почати наше знайомство?",
+      options: [
+        { text: "Давайте спробуємо щось створити", next_step: "step_3_action_path" },
+        { text: "Розкажіть детальніше, що Ви вмієте", next_step: "step_3_explanation_path" },
+      ],
+    },
+    step_3_action_path: {
+      message: "Чудовий, дієвий настрій! Найкраще вчитися на практиці. Я можу допомогти Вам з планом уроку, придумати тест або цікаве завдання. Щоб я міг показати приклад, скажіть, який предмет Ви викладаєте?",
+      options: [
+        { text: "Українська мова та література", next_step: "step_4_language" },
+        { text: "Математика або природничі науки", next_step: "step_4_science" },
+        { text: "Інший предмет / Початкові класи", next_step: "step_4_general" },
+      ],
+    },
+    step_3_explanation_path: {
+      message: "З радістю розповім! Я вмію писати зрозумілі тексти для учнів, складати контрольні роботи, переробляти складні правила на прості та навіть створювати сценарії для шкільних свят. Усе це — за кілька секунд. Давайте перевіримо? Який предмет Ви викладаєте?",
+      options: [
+        { text: "Українська мова та література", next_step: "step_4_language" },
+        { text: "Математика або природничі науки", next_step: "step_4_science" },
+        { text: "Інший предмет / Початкові класи", next_step: "step_4_general" },
+      ],
+    },
+    step_4_language: {
+      message: "О, це мені дуже близьке! Дбаймо про чистоту нашої мови разом. Натисніть кнопку нижче, і я покажу, як я можу миттєво підготувати для Вас текст диктанту про весну з трьома запитаннями для учнів.",
+      options: [{ text: "Підготувати диктант", next_step: "step_5_completion" }],
+    },
+    step_4_science: {
+      message: "Чудово! Точні науки потребують уважності. Натисніть кнопку нижче, і я згенерую для Вас три цікаві логічні задачі, які розворушать учнів на початку уроку. Їх можна буде одразу зберегти як документ.",
+      options: [{ text: "Створити цікаві задачі", next_step: "step_5_completion" }],
+    },
+    step_4_general: {
+      message: "Прекрасно! Для будь-якого предмета можна знайти цікавинку. Натисніть кнопку нижче, і я створю для Вас універсальну ідею для короткої розминки на початку уроку, щоб швидко залучити дітей до роботи.",
+      options: [{ text: "Створити розминку", next_step: "step_5_completion" }],
+    },
+    step_5_completion: {
+      message: "Ось Ваш матеріал! Ви можете зберегти його як звичайний документ і одразу використовувати. Бачите, як усе просто? Наше невеличке навчання завершено. Відтепер просто пишіть Ваші побажання у цей чат, ніби пишете повідомлення мені. Чим я можу допомогти Вам сьогодні?",
+      options: [],
+      action: "unlock_text_input",
+    },
+    end_experienced: {
+      message: "Радий вітати досвідченого користувача! Тоді не будемо гаяти часу. Напишіть мені Ваше завдання у чат, і я одразу допоможу підготувати матеріал до уроку.",
+      options: [],
+      action: "unlock_text_input",
+    },
+  },
+};
+
+function OnboardingView({ onComplete, onTypingChange }) {
+  const [nodeKey, setNodeKey] = useState(ONBOARDING_FLOW.start_node);
+  const { text, running, start } = useTypewriter(onTypingChange);
+
+  useEffect(() => {
+    start(ONBOARDING_FLOW.nodes[nodeKey].message, 6);
+  }, [nodeKey]);
+
+  const node = ONBOARDING_FLOW.nodes[nodeKey];
+
+  return (
+    <div style={{ paddingTop: 56 }}>
+      <SpeechBubble large>
+        <div style={{ fontSize: 17, lineHeight: 1.7, color: "#3d3458", maxWidth: 580 }}>
+          {text}{running && CURSOR}
+        </div>
+        {!running && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 20 }}>
+            {node.options.map((opt, i) => (
+              <Chip key={i} onClick={() => setNodeKey(opt.next_step)}>{opt.text}</Chip>
+            ))}
+            {node.options.length === 0 && <Chip onClick={onComplete}>Розпочати роботу →</Chip>}
+          </div>
+        )}
+      </SpeechBubble>
+    </div>
+  );
+}
+
 // ---------- History sidebar (clear list with doc icon + date) ----------
 function formatDate(ts) {
   if (!ts) return "";
@@ -992,58 +1171,80 @@ function HistoryStrip({ items, onPick }) {
 
 // ---------- Main App ----------
 function App() {
+  useEffect(() => {
+    Object.values(PHOTO_MAP).forEach((src) => {
+      const img = new Image();
+      img.src = src;
+    });
+  }, []);
+
+  const [onboardingNodeKey, setOnboardingNodeKey] = useState(ONBOARDING_FLOW.start_node);
+
+  const completeOnboarding = () => setOnboardingNodeKey(null);
+
   const [input, setInput] = useState("");
-  const [doc, setDoc] = useState(null);
-  const [status, setStatus] = useState("idle"); // idle | listening | thinking | speaking
+  const [messages, setMessages] = useState([]);
+  const [status, setStatus] = useState("idle");
   const [history, setHistory] = useState(loadHistory);
   const [justCopied, setJustCopied] = useState(false);
   const [toast, setToast] = useState(null);
-  const [faqItem, setFaqItem] = useState(null);
-  const [faqText, setFaqText] = useState("");
-  const [faqGenerating, setFaqGenerating] = useState(false);
   const recognitionRef = useRef(null);
-  const faqTimerRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const faqTypewriter = useTypewriter();
+  const docTypewriter = useTypewriter();
+
+  const lastMsg = messages[messages.length - 1];
+  const lastDoc = lastMsg?.doc ?? null;
+
+  useEffect(() => {
+    const firstNode = ONBOARDING_FLOW.nodes[ONBOARDING_FLOW.start_node];
+    setMessages([{ id: Date.now(), role: "assistant", text: firstNode.message }]);
+    docTypewriter.start(firstNode.message, 6);
+  }, []);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, status]);
 
   const photoKey = useMemo(() => {
     if (status === "thinking") return "thinking";
     if (status === "listening") return "listening";
     if (status === "speaking") return "speaking";
-    if (faqGenerating) return "faq_generating";
-    if (faqItem) return "faq_done";
+    if (docTypewriter.running || faqTypewriter.running) return "faq_generating";
+    if (messages.length > 0) return "faq_done";
     return "idle";
-  }, [status, faqGenerating, faqItem]);
+  }, [status, docTypewriter.running, faqTypewriter.running, messages.length]);
+
+  const handleOnboardingOption = (option) => {
+    const nextKey = option.next_step;
+    const nextNode = ONBOARDING_FLOW.nodes[nextKey];
+    setMessages(msgs => [
+      ...msgs,
+      { id: Date.now(), role: "user", text: option.text },
+      { id: Date.now() + 1, role: "assistant", text: nextNode.message },
+    ]);
+    setOnboardingNodeKey(nextKey);
+    docTypewriter.start(nextNode.message, 6);
+  };
 
   const handleFaqPick = (item) => {
-    if (faqTimerRef.current) clearInterval(faqTimerRef.current);
-    setFaqItem(item);
-    setFaqText("");
-    setFaqGenerating(true);
-    setDoc(null);
-
-    let i = 0;
-    const text = item.a;
-    faqTimerRef.current = setInterval(() => {
-      i++;
-      setFaqText(text.slice(0, i));
-      if (i >= text.length) {
-        clearInterval(faqTimerRef.current);
-        setFaqGenerating(false);
-      }
-    }, 12);
+    docTypewriter.stop();
+    setMessages(msgs => [...msgs, { id: Date.now(), role: "assistant", faqItem: item }]);
+    faqTypewriter.start(item.a, 12);
   };
 
   const handleSubmit = async () => {
     const prompt = input.trim();
     if (!prompt) return;
-    if (faqTimerRef.current) clearInterval(faqTimerRef.current);
-    setFaqItem(null);
-    setFaqText("");
-    setFaqGenerating(false);
+    faqTypewriter.stop();
+    docTypewriter.stop();
+    setMessages(msgs => [...msgs, { id: Date.now(), role: "user", text: prompt }]);
+    setInput("");
     setStatus("thinking");
-    setDoc(null);
     try {
       const result = await mockAssistant(prompt);
-      setDoc(result);
+      setMessages(msgs => [...msgs, { id: Date.now() + 1, role: "assistant", doc: result }]);
+      docTypewriter.start(result.short_voice_answer, 6);
       const next = [{ ...result, _prompt: prompt, _ts: Date.now() }, ...history].slice(0, 5);
       setHistory(next);
       saveHistory(next);
@@ -1089,15 +1290,14 @@ function App() {
   };
 
   const handleSpeak = () => {
-    // TODO: Replace with production TTS
-    if (!doc?.short_voice_answer) return;
+    if (!lastDoc?.short_voice_answer) return;
     if (!("speechSynthesis" in window)) {
       setToast("Озвучення недоступне у цьому браузері.");
       setTimeout(() => setToast(null), 3000);
       return;
     }
     window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(doc.short_voice_answer);
+    const u = new SpeechSynthesisUtterance(lastDoc.short_voice_answer);
     u.lang = "uk-UA";
     u.rate = 1.0;
     u.onstart = () => setStatus("speaking");
@@ -1107,7 +1307,8 @@ function App() {
   };
 
   const handleCopy = async () => {
-    if (!doc) return;
+    if (!lastDoc) return;
+    const doc = lastDoc;
     const text = [
       doc.title,
       "",
@@ -1128,30 +1329,33 @@ function App() {
   };
 
   const handleShorter = async () => {
-    if (!doc) return;
+    if (!lastDoc) return;
     setStatus("thinking");
     await new Promise((r) => setTimeout(r, 700));
-    setDoc({
-      ...doc,
-      summary: doc.summary,
-      sections: doc.sections.map((s) => ({
+    const shorter = {
+      ...lastDoc,
+      sections: lastDoc.sections.map((s) => ({
         ...s,
         items: s.items.slice(0, Math.max(2, Math.ceil(s.items.length / 2))),
       })),
-      teacher_tips: doc.teacher_tips?.slice(0, 1) || [],
-    });
+      teacher_tips: lastDoc.teacher_tips?.slice(0, 1) || [],
+    };
+    setMessages(msgs => msgs.map((m, i) =>
+      i === msgs.length - 1 && m.doc ? { ...m, doc: shorter } : m
+    ));
     setStatus("idle");
   };
 
   return (
     <div
       style={{
-        minHeight: "100vh",
+        height: "100vh",
         background: BG,
         color: "#1f1638",
         fontFamily: "'Inter', system-ui, sans-serif",
         display: "flex",
         flexDirection: "column",
+        overflow: "hidden",
       }}
     >
       <main
@@ -1163,14 +1367,15 @@ function App() {
           width: "100%",
           margin: "0 auto",
           padding: "0 56px",
+          minHeight: 0,
         }}
         className="layout"
       >
         <AvatarPanel
           status={status}
           photoKey={photoKey}
-          faq={!doc && status !== "thinking" ? (
-            <ExampleDropdown onPick={handleFaqPick} activeQ={faqItem?.q} />
+          faq={!onboardingNodeKey && status !== "thinking" ? (
+            <ExampleDropdown onPick={handleFaqPick} activeQ={lastMsg?.faqItem?.q} />
           ) : null}
         />
 
@@ -1181,23 +1386,67 @@ function App() {
             flexDirection: "column",
             paddingTop: 56,
             minWidth: 0,
+            minHeight: 0,
           }}
         >
-          <div style={{ flex: 1 }}>
-            {status === "thinking" && !doc && <ThinkingState />}
-            {!doc && status !== "thinking" && !faqItem && <EmptyState />}
-            {!doc && status !== "thinking" && faqItem && (
-              <FaqAnswerBubble item={faqItem} displayedText={faqText} generating={faqGenerating} />
-            )}
-            {doc && (
-              <DocumentView
-                doc={doc}
-                onCopy={handleCopy}
-                onShorter={handleShorter}
-                onSpeak={handleSpeak}
-                justCopied={justCopied}
-              />
-            )}
+          <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", minHeight: 0 }}>
+            {messages.map((msg, i) => {
+              const isLast = i === messages.length - 1;
+              if (msg.role === "user") return <UserBubble key={msg.id} text={msg.text} />;
+
+              const isTyping = isLast && (msg.doc ? docTypewriter.running : msg.text ? docTypewriter.running : faqTypewriter.running);
+              const typedText = isLast ? (msg.faqItem ? faqTypewriter.text : docTypewriter.text) : null;
+
+              const currentNode = onboardingNodeKey ? ONBOARDING_FLOW.nodes[onboardingNodeKey] : null;
+
+              return (
+                <div key={msg.id} style={{ marginBottom: 24 }}>
+                  <SpeechBubble large>
+                    {isTyping ? (
+                      <div style={{ fontSize: 17, lineHeight: 1.7, color: "#3d3458", maxWidth: 580 }}>
+                        {typedText}{CURSOR}
+                      </div>
+                    ) : msg.doc ? (
+                      <DocumentView doc={msg.doc} />
+                    ) : msg.faqItem ? (
+                      <div>
+                        <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 18, fontWeight: 600, color: "#2a1f4a", marginBottom: 16, lineHeight: 1.35, maxWidth: 580 }}>
+                          {msg.faqItem.q}
+                        </div>
+                        <div style={{ fontSize: 17, lineHeight: 1.7, color: "#3d3458", maxWidth: 580 }}>
+                          {msg.faqItem.a}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 17, lineHeight: 1.7, color: "#3d3458", maxWidth: 580 }}>
+                        {msg.text}
+                      </div>
+                    )}
+                  </SpeechBubble>
+
+                  {isLast && !isTyping && msg.doc && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 24, marginTop: 12, paddingLeft: 40 }}>
+                      <TextButton onClick={handleCopy}>{justCopied ? "Скопійовано" : "Скопіювати текст"}</TextButton>
+                      <TextButton onClick={handleShorter}>Зробити коротше</TextButton>
+                      <TextButton onClick={handleSpeak}>Озвучити</TextButton>
+                    </div>
+                  )}
+
+                  {isLast && !isTyping && onboardingNodeKey && currentNode && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12, paddingLeft: 40 }}>
+                      {currentNode.options.map((opt, j) => (
+                        <Chip key={j} onClick={() => handleOnboardingOption(opt)}>{opt.text}</Chip>
+                      ))}
+                      {currentNode.options.length === 0 && (
+                        <Chip onClick={completeOnboarding}>Розпочати роботу →</Chip>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {status === "thinking" && <ThinkingState />}
+            <div ref={messagesEndRef} />
           </div>
 
           <Composer
@@ -1207,7 +1456,7 @@ function App() {
             onMic={handleMic}
             onSpeakLast={handleSpeak}
             status={status}
-            hasResult={!!doc}
+            hasResult={!!lastDoc}
           />
 
           <footer
