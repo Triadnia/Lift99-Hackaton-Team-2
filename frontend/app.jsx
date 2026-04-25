@@ -236,7 +236,7 @@ function saveHistory(items) {
 const PHOTO_MAP = {
   idle: "uploads/sit.png",
   listening: "uploads/sit_talk.png",
-  thinking: "uploads/important_talk.png",
+  thinking: "uploads/caution.png",
   speaking: "uploads/important.png",
   faq_generating: "uploads/important_talk.png",
   faq_done: "uploads/sit.png",
@@ -420,125 +420,9 @@ function ThinkingState() {
 
 function DocumentView({ doc }) {
   return (
-    <article style={{ paddingTop: 24, paddingBottom: 40, maxWidth: 760 }}>
-      <h1
-        style={{
-          fontFamily: "'Lora', Georgia, serif",
-          fontSize: 42,
-          fontWeight: 500,
-          color: "#1f1638",
-          lineHeight: 1.2,
-          margin: 0,
-          marginBottom: 18,
-        }}
-      >
-        {doc.title}
-      </h1>
-      <p
-        style={{
-          fontSize: 19,
-          lineHeight: 1.6,
-          color: "#3d3458",
-          margin: 0,
-          marginBottom: 36,
-          maxWidth: 660,
-        }}
-      >
-        {doc.summary}
-      </p>
-
-      {doc.sections.map((s, i) => (
-        <section key={i} style={{ marginBottom: 32 }}>
-          <h2
-            style={{
-              fontFamily: "'Lora', Georgia, serif",
-              fontSize: 24,
-              fontWeight: 500,
-              color: "#1f1638",
-              margin: 0,
-              marginBottom: 12,
-            }}
-          >
-            {s.title}
-          </h2>
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {s.items.map((item, j) => (
-              <li
-                key={j}
-                style={{
-                  position: "relative",
-                  paddingLeft: 22,
-                  marginBottom: 10,
-                  fontSize: 17,
-                  lineHeight: 1.6,
-                  color: "#2d2548",
-                }}
-              >
-                <span
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    top: 12,
-                    width: 8,
-                    height: 1,
-                    background: ACCENT,
-                  }}
-                />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-
-      {doc.teacher_tips && doc.teacher_tips.length > 0 && (
-        <section style={{ marginTop: 40, marginBottom: 8 }}>
-          <h2
-            style={{
-              fontFamily: "'Lora', Georgia, serif",
-              fontSize: 24,
-              fontWeight: 500,
-              color: "#1f1638",
-              margin: 0,
-              marginBottom: 12,
-              fontStyle: "italic",
-            }}
-          >
-            Поради для вчителя
-          </h2>
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {doc.teacher_tips.map((t, i) => (
-              <li
-                key={i}
-                style={{
-                  paddingLeft: 22,
-                  position: "relative",
-                  marginBottom: 10,
-                  fontSize: 17,
-                  lineHeight: 1.6,
-                  color: "#3d3458",
-                  fontStyle: "italic",
-                }}
-              >
-                <span
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    top: 12,
-                    width: 8,
-                    height: 1,
-                    background: ACCENT,
-                    opacity: 0.5,
-                  }}
-                />
-                {t}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-    </article>
+    <div style={{ fontSize: 17, lineHeight: 1.7, color: "#3d3458", maxWidth: 580 }}>
+      {doc.text}
+    </div>
   );
 }
 
@@ -1204,7 +1088,15 @@ function App() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, status]);
+  }, [messages.length, status]);
+
+  useEffect(() => {
+    if (docTypewriter.running || faqTypewriter.running) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [docTypewriter.text, faqTypewriter.text, docTypewriter.running, faqTypewriter.running]);
 
   const photoKey = useMemo(() => {
     if (status === "thinking") return "thinking";
@@ -1244,7 +1136,7 @@ function App() {
     try {
       const result = await mockAssistant(prompt);
       setMessages(msgs => [...msgs, { id: Date.now() + 1, role: "assistant", doc: result }]);
-      docTypewriter.start(result.short_voice_answer, 6);
+      docTypewriter.start(result.text, 20);
       const next = [{ ...result, _prompt: prompt, _ts: Date.now() }, ...history].slice(0, 5);
       setHistory(next);
       saveHistory(next);
@@ -1297,7 +1189,7 @@ function App() {
       return;
     }
     window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(lastDoc.short_voice_answer);
+    const u = new SpeechSynthesisUtterance(lastDoc.short_voice_answer || lastDoc.text);
     u.lang = "uk-UA";
     u.rate = 1.0;
     u.onstart = () => setStatus("speaking");
@@ -1308,16 +1200,7 @@ function App() {
 
   const handleCopy = async () => {
     if (!lastDoc) return;
-    const doc = lastDoc;
-    const text = [
-      doc.title,
-      "",
-      doc.summary,
-      "",
-      ...doc.sections.flatMap((s) => [s.title, ...s.items.map((i) => "— " + i), ""]),
-      doc.teacher_tips?.length ? "Поради для вчителя" : "",
-      ...(doc.teacher_tips || []).map((t) => "— " + t),
-    ].join("\n");
+    const text = lastDoc.text || "";
     try {
       await navigator.clipboard.writeText(text);
       setJustCopied(true);
@@ -1389,7 +1272,7 @@ function App() {
             minHeight: 0,
           }}
         >
-          <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", minHeight: 0, paddingRight: 24 }}>
             {messages.map((msg, i) => {
               const isLast = i === messages.length - 1;
               if (msg.role === "user") return <UserBubble key={msg.id} text={msg.text} />;
@@ -1433,12 +1316,15 @@ function App() {
                   )}
 
                   {isLast && !isTyping && onboardingNodeKey && currentNode && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12, paddingLeft: 40 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12, paddingLeft: 40, alignItems: "center" }}>
                       {currentNode.options.map((opt, j) => (
                         <Chip key={j} onClick={() => handleOnboardingOption(opt)}>{opt.text}</Chip>
                       ))}
                       {currentNode.options.length === 0 && (
                         <Chip onClick={completeOnboarding}>Розпочати роботу →</Chip>
+                      )}
+                      {onboardingNodeKey === ONBOARDING_FLOW.start_node && (
+                        <TextButton onClick={completeOnboarding}>Пропустити</TextButton>
                       )}
                     </div>
                   )}
